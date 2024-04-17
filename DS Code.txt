@@ -1,0 +1,108 @@
+install.packages("e1071")
+install.packages("caret")
+library.packages("klaR")
+install.packages("pROC")
+install.packages("gains")
+install.packages("MLmetrics")
+
+library(pROC)
+library(gains)
+library(e1071)
+library(caret)
+library(klaR)
+library(MLmetrics)
+
+file_path <- "C:/ds_salaries.csv"
+emplodata <- read.csv(file_path, header = TRUE)
+head(emplodata)
+str(emplodata)
+
+sum(is.na(emplodata))
+
+emplodata$employment_type <- as.factor(emplodata$employment_type)
+
+
+emplodata <- emplodata[, !colnames(emplodata) %in% "X"]
+str(emplodata)
+
+
+emplodata$salary_category <- cut(emplodata$salary, breaks = c(-Inf, 50000, 400000, Inf), labels = c("Low", "Medium", "High"))
+emplodata$salary_in_usd_category <- cut(emplodata$salary_in_usd, breaks = c(-Inf, 50000, 400000, Inf), labels = c("Low", "Medium", "High"))
+
+
+categorical_vars <- c("experience_level","work_year", "job_title", "employee_residence", "company_location", "company_size", "salary_currency","remote_ratio","salary_in_usd","salary","salary_in_usd_category","salary_category")
+
+check_significance <- function(var) {
+  contingency_table <- table(emplodata[, var], emplodata$employment_type)
+  chi_square_result <- chisq.test(contingency_table)
+  p_value <- chi_square_result$p.value
+  
+
+  significance_level <- 0.05
+  
+  if (p_value <= significance_level) {
+    cat("The variable", var, "is significant (p-value =", p_value, ")\n")
+  } else {
+    cat("The variable", var, "is not significant (p-value =", p_value, ")\n")
+    emplodata <- emplodata[, !colnames(emplodata) %in% var]  # Remove non-significant variable
+  }
+}
+
+for (var in categorical_vars) {
+  check_significance(var)
+}
+
+str(emplodata)
+
+columns_to_remove <- c("salary","remote_ratio","work_year","job_title","salary_currency","company_size","salary_in_usd","employee_residence","company_location")
+emplodata <- emplodata[, !colnames(emplodata) %in% columns_to_remove]
+str(emplodata)
+
+set.seed(1)  
+train_indices <- sample(1:nrow(emplodata), 0.8 * nrow(emplodata))
+train_data <- emplodata[train_indices, ]
+test_data <- emplodata[-train_indices, ]
+
+naive_bayes_model <- naiveBayes(employment_type ~ ., data = train_data)
+
+predictions <- predict(naive_bayes_model, test_data)
+
+confusion_matrix <- table(predictions, test_data$employment_type)
+print(confusion_matrix)
+
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy:", accuracy, "\n")
+
+conf_matrix <- confusionMatrix(predictions, test_data$employment_type)
+print(conf_matrix)
+
+set.seed(1)
+
+ctrl <- trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = multiClassSummary)
+
+naive_bayes_model_cv <- train(employment_type ~ ., data = emplodata, method = "naive_bayes",
+                              trControl = ctrl, preProcess = c("center", "scale"))
+
+print(naive_bayes_model_cv)
+
+cat("Cross-validated Accuracy:", naive_bayes_model_cv$results$Accuracy, "\n")
+
+naive_bayes_model <- naiveBayes(employment_type ~ ., data = train_data)
+
+
+predictions <- predict(naive_bayes_model, test_data)
+
+conf_matrix <- confusionMatrix(predictions, test_data$employment_type)
+
+print(conf_matrix)
+
+recall <- conf_matrix$byClass["Sensitivity"]
+precision <- conf_matrix$byClass["Pos Pred Value"]
+f_measure <- 2 * (precision * recall) / (precision + recall)
+
+cat("Recall:", recall, "\n")
+cat("Precision:", precision, "\n")
+cat("F-measure:", f_measure, "\n")
+
+
+
